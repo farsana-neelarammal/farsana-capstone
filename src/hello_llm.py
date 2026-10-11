@@ -30,9 +30,6 @@ def ask(question: str) -> str:
 
 
 if __name__ == "__main__":
-    question = " ".join(sys.argv[1:])
-    if not question:
-        question = "What is RAG in one sentence?"
-
+    question = " ".join(sys.argv[1:]) or "Say hello in one sentence."
     answer = ask(question)
     print(answer if answer is not None else "No response received.")
