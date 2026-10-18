@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sqlite3
 import sys
 import time
 from pathlib import Path
@@ -34,6 +35,11 @@ if __package__ in (None, ""):
 
 # Live-session stand-in. Same Pydantic shape as the real call.
 from fake_llm import Question, Answer, fake_ask_llm, FakeLLMError
+
+if __package__ in (None, ""):
+    from src.pipeline.settings import Settings, RunSummary
+else:
+    from .settings import Settings, RunSummary
 
 
 # ---------- Step 2: one async call ----------
@@ -91,19 +97,119 @@ if not log.handlers:
     log.addHandler(handler)
 
 
+def build_settings(fail_rate: float | None = None) -> Settings:
+    """Create a validated settings object for this run."""
+    settings = Settings()
+    if fail_rate is not None:
+        settings.fail_rate = fail_rate
+    return settings
+
+
+def summarize_run(
+    started_at: float,
+    elapsed_seconds: float,
+    answers: list[Answer],
+    fail_rate: float,
+    use_fake: bool = True,
+) -> RunSummary:
+    """Convert the finished batch into a validated RunSummary row."""
+    return RunSummary(
+        started_at=started_at,
+        elapsed_seconds=elapsed_seconds,
+        n_questions=len(answers),
+        n_succeeded=sum(1 for a in answers),
+        n_retries_total=sum(a.retries for a in answers),
+        total_cost_usd=sum(a.cost_usd for a in answers),
+        fail_rate=fail_rate,
+        use_fake=use_fake,
+    )
+
+
+def save_results_json(answers: list[Answer], path: Path) -> None:
+    """Persist each answer as a JSON object in a single file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = [
+        {
+            "question": a.question,
+            "text": a.text,
+            "cost_usd": a.cost_usd,
+            "retries": a.retries,
+        }
+        for a in answers
+    ]
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def save_run_summary_db(summary: RunSummary, db_path: Path) -> None:
+    """Persist one row in the runs table."""
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS runs (
+                started_at REAL,
+                elapsed_seconds REAL,
+                n_questions INTEGER,
+                n_succeeded INTEGER,
+                n_retries_total INTEGER,
+                total_cost_usd REAL,
+                fail_rate REAL,
+                use_fake INTEGER
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO runs (
+                started_at,
+                elapsed_seconds,
+                n_questions,
+                n_succeeded,
+                n_retries_total,
+                total_cost_usd,
+                fail_rate,
+                use_fake
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                summary.started_at,
+                summary.elapsed_seconds,
+                summary.n_questions,
+                summary.n_succeeded,
+                summary.n_retries_total,
+                summary.total_cost_usd,
+                summary.fail_rate,
+                int(summary.use_fake),
+            ),
+        )
+        conn.commit()
+
+
 # ---------- main ----------
 if __name__ == "__main__":
-    import sys
-
     fail_rate = float(sys.argv[1]) if len(sys.argv) > 1 else 0.0
+    settings = build_settings(fail_rate=fail_rate)
     sample = [
         Question(text="What is RAG in one sentence?"),
         Question(text="Name three uses of vector databases."),
         Question(text="Why might an LLM hallucinate?"),
     ]
     started = time.time()
-    answers = asyncio.run(run_batch(sample, fail_rate=fail_rate))
+    answers = asyncio.run(run_batch(sample, fail_rate=settings.fail_rate))
     elapsed = time.time() - started
+    summary = summarize_run(
+        started_at=started,
+        elapsed_seconds=elapsed,
+        answers=answers,
+        fail_rate=settings.fail_rate,
+        use_fake=settings.use_fake,
+    )
+
+    save_results_json(answers, settings.results_json)
+    save_run_summary_db(summary, settings.results_db)
+
     print(f"\n{len(answers)} answers in {elapsed:.2f}s\n")
     for a in answers:
         print(f"- {a.text[:80]}")
+    print("\nSaved summary:")
+    print(summary.model_dump())

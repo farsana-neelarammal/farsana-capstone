@@ -9,13 +9,15 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 
 class Settings(BaseModel):
     """Runtime configuration. Validated at construction."""
 
-    questions_csv: Path  = Path("data/questions.csv")
-    results_json:  Path  = Path("results.json")
-    results_db:    Path  = Path("results.db")
+    questions_csv: Path  = PROJECT_ROOT / "data" / "questions.csv"
+    results_json:  Path  = PROJECT_ROOT / "results.json"
+    results_db:    Path  = PROJECT_ROOT / "results.db"
     batch_size:    int   = Field(5,   gt=0, le=20)
     fail_rate:     float = Field(0.0, ge=0.0, le=1.0)
     model:         str   = "gpt-4o-mini"

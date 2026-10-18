@@ -1,0 +1,20 @@
+[
+  {
+    "question": "What is RAG in one sentence?",
+    "text": "RAG combines retrieval over a document corpus with an LLM, so answers are grounded in your source material rather than the model's training data.",
+    "cost_usd": 0.0001,
+    "retries": 0
+  },
+  {
+    "question": "Name three uses of vector databases.",
+    "text": "Vector databases power semantic search, RAG context retrieval, and recommendation systems by storing high-dimensional embeddings of text.",
+    "cost_usd": 0.0001,
+    "retries": 0
+  },
+  {
+    "question": "Why might an LLM hallucinate?",
+    "text": "LLMs hallucinate when they produce confident text that isn't grounded in evidence \u2014 usually because the prompt invites speculation or training coverage is thin.",
+    "cost_usd": 0.0001,
+    "retries": 0
+  }
+]
